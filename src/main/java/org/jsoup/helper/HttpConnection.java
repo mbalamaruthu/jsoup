@@ -17,10 +17,12 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.zip.GZIPInputStream;
 
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
+import org.jsoup.RedirectUserAgentListener;
 import org.jsoup.UnsupportedMimeTypeException;
 import org.jsoup.nodes.Document;
 import org.jsoup.parser.Parser;
@@ -75,6 +77,14 @@ public class HttpConnection implements Connection {
 	public Connection userAgent(String userAgent) {
 		Validate.notNull(userAgent, "User agent must not be null");
 		req.header("User-Agent", userAgent);
+		return this;
+	}
+
+	public Connection redirectUserAgentListener(
+			RedirectUserAgentListener userAgentListener) {
+		Validate.notNull(userAgentListener,
+				"User agent listener must not be null");
+		req.setUserAgentListener(userAgentListener);
 		return this;
 	}
 
@@ -335,6 +345,7 @@ public class HttpConnection implements Connection {
 		private boolean ignoreHttpErrors = false;
 		private boolean ignoreContentType = false;
 		private Parser parser;
+		private Optional<RedirectUserAgentListener> userAgentListener;
 
 		private Request() {
 			timeoutMilliseconds = 3000;
@@ -344,6 +355,7 @@ public class HttpConnection implements Connection {
 			method = Connection.Method.GET;
 			headers.put("Accept-Encoding", "gzip");
 			parser = Parser.htmlParser();
+			userAgentListener = Optional.empty();
 		}
 
 		public int timeout() {
@@ -412,6 +424,21 @@ public class HttpConnection implements Connection {
 
 		public Parser parser() {
 			return parser;
+		}
+
+		public void setUserAgentHeaderFromRedirectListener(String url) {
+			if (userAgentListener.isPresent()) {
+				String userAgent = userAgentListener.get().getUserAgent(url);
+				Validate.notNull(userAgent);
+				System.out.println("User Agent from Listener for request url "
+						+ url + " is " + userAgent);
+				header("User-Agent", userAgent);
+			}
+		}
+
+		public void setUserAgentListener(
+				RedirectUserAgentListener userAgentListener) {
+			this.userAgentListener = Optional.of(userAgentListener);
 		}
 	}
 
@@ -491,7 +518,11 @@ public class HttpConnection implements Connection {
 															// Location:
 															// http:/temp/AAG_New/en/index.php
 						location = location.substring(6);
-					req.url(new URL(req.url(), encodeUrl(location)));
+					String encodedUrl = encodeUrl(location);
+					req.url(new URL(req.url(), encodedUrl));
+
+					// Set user agent header from redirect listener
+					req.setUserAgentHeaderFromRedirectListener(encodedUrl);
 
 					for (Map.Entry<String, String> cookie : res.cookies
 							.entrySet()) { // add response cookies to request
@@ -788,4 +819,5 @@ public class HttpConnection implements Connection {
 			return key + "=" + value;
 		}
 	}
+
 }
